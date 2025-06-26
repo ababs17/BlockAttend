@@ -9,11 +9,16 @@ type UserProfileUpdate = Database['public']['Tables']['user_profiles']['Update']
 class SupabaseUserProfileService {
   // Set current user context for RLS
   private async setUserContext(userAddress: string) {
-    await supabase.rpc('set_config', {
-      setting_name: 'app.current_user_address',
-      setting_value: userAddress,
-      is_local: true
-    });
+    try {
+      await supabase.rpc('set_config', {
+        setting_name: 'app.current_user_address',
+        setting_value: userAddress,
+        is_local: true
+      });
+    } catch (error) {
+      console.warn('Failed to set user context for RLS:', error);
+      // Continue execution - RLS policies may still work with other mechanisms
+    }
   }
 
   // Convert database row to UserProfile type
@@ -63,7 +68,7 @@ class SupabaseUserProfileService {
 
       if (error) {
         if (error.code === 'PGRST116') {
-          // No rows returned
+          // No rows returned - this is expected when profile doesn't exist
           return null;
         }
         throw error;
@@ -71,6 +76,10 @@ class SupabaseUserProfileService {
 
       return this.dbRowToUserProfile(data);
     } catch (error) {
+      // Only log unexpected errors, not "profile not found" cases
+      if (error && typeof error === 'object' && 'code' in error && error.code === 'PGRST116') {
+        return null;
+      }
       console.error('Error fetching user profile:', error);
       throw new Error('Failed to fetch user profile');
     }
