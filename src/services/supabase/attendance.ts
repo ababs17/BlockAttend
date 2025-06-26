@@ -1,330 +1,249 @@
 import { supabase } from '../../lib/supabase';
-import { AttendanceSession, AttendanceRecord, ExcuseSubmission } from '../../types';
-import { Database } from '../../types/database';
+import type { AttendanceSession, AttendanceRecord, ExcuseSubmission } from '../../types';
 
-type AttendanceSessionRow = Database['public']['Tables']['attendance_sessions']['Row'];
-type AttendanceSessionInsert = Database['public']['Tables']['attendance_sessions']['Insert'];
-type AttendanceRecordRow = Database['public']['Tables']['attendance_records']['Row'];
-type AttendanceRecordInsert = Database['public']['Tables']['attendance_records']['Insert'];
-type ExcuseSubmissionRow = Database['public']['Tables']['excuse_submissions']['Row'];
-type ExcuseSubmissionInsert = Database['public']['Tables']['excuse_submissions']['Insert'];
+export class SupabaseAttendanceService {
+  private userAddress: string | null = null;
 
-class SupabaseAttendanceService {
-  // Set current user context for RLS
-  private async setUserContext(userAddress: string) {
-    await supabase.rpc('set_config', {
-      setting_name: 'app.current_user_address',
-      setting_value: userAddress,
-      is_local: true
-    });
-  }
-
-  // Convert database row to AttendanceSession type
-  private dbRowToAttendanceSession(row: AttendanceSessionRow): AttendanceSession {
-    return {
-      id: row.id,
-      courseCode: row.course_code,
-      courseName: row.course_name,
-      description: row.description,
-      startTime: new Date(row.start_time),
-      endTime: new Date(row.end_time),
-      isActive: row.is_active,
-      createdBy: row.created_by,
-      attendeeCount: row.attendee_count,
-      location: {
-        latitude: Number(row.location_latitude),
-        longitude: Number(row.location_longitude),
-        address: row.location_address || undefined
-      },
-      declarationTime: new Date(row.declaration_time),
-      allowedRadius: row.allowed_radius,
-      checkInWindow: row.check_in_window,
-      verifiedChecker: row.verified_checker,
-      excuseDeadlineHours: row.excuse_deadline_hours
-    };
-  }
-
-  // Convert AttendanceSession to database insert format
-  private attendanceSessionToDbInsert(session: Omit<AttendanceSession, 'id' | 'attendeeCount' | 'verifiedChecker'>): AttendanceSessionInsert {
-    return {
-      course_code: session.courseCode,
-      course_name: session.courseName,
-      description: session.description,
-      start_time: session.startTime.toISOString(),
-      end_time: session.endTime.toISOString(),
-      is_active: session.isActive,
-      created_by: session.createdBy,
-      location_latitude: session.location.latitude,
-      location_longitude: session.location.longitude,
-      location_address: session.location.address || null,
-      declaration_time: session.declarationTime.toISOString(),
-      allowed_radius: session.allowedRadius,
-      check_in_window: session.checkInWindow,
-      excuse_deadline_hours: session.excuseDeadlineHours
-    };
-  }
-
-  // Convert database row to AttendanceRecord type
-  private dbRowToAttendanceRecord(row: AttendanceRecordRow): AttendanceRecord {
-    return {
-      id: row.id,
-      sessionId: row.session_id,
-      studentAddress: row.student_address,
-      timestamp: new Date(row.timestamp),
-      transactionId: row.transaction_id,
-      verified: row.verified,
-      status: row.status,
-      location: row.location_latitude && row.location_longitude ? {
-        latitude: Number(row.location_latitude),
-        longitude: Number(row.location_longitude)
-      } : undefined,
-      locationVerified: row.location_verified,
-      distanceFromClass: row.distance_from_class,
-      checkInAttempts: row.check_in_attempts
-    };
-  }
-
-  // Convert database row to ExcuseSubmission type
-  private dbRowToExcuseSubmission(row: ExcuseSubmissionRow): ExcuseSubmission {
-    return {
-      id: row.id,
-      sessionId: row.session_id,
-      studentAddress: row.student_address,
-      reason: row.reason,
-      submissionTime: new Date(row.submission_time),
-      approvalStatus: row.approval_status,
-      reviewedBy: row.reviewed_by || undefined,
-      reviewTime: row.review_time ? new Date(row.review_time) : undefined,
-      reviewNotes: row.review_notes || undefined,
-      transactionId: row.transaction_id,
-      isWithinDeadline: row.is_within_deadline
-    };
-  }
-
-  async createSession(sessionData: Omit<AttendanceSession, 'id' | 'attendeeCount' | 'verifiedChecker'>, userAddress: string): Promise<AttendanceSession> {
+  async setUserContext(address: string): Promise<void> {
     try {
-      await this.setUserContext(userAddress);
-
-      const insertData = this.attendanceSessionToDbInsert(sessionData);
+      this.userAddress = address;
       
-      const { data, error } = await supabase
-        .from('attendance_sessions')
-        .insert(insertData)
-        .select()
-        .single();
+      // Set the user context for RLS policies
+      const { error } = await supabase.rpc('set_config', {
+        setting_name: 'app.current_user_address',
+        setting_value: address,
+        is_local: true
+      });
 
       if (error) {
-        throw error;
+        console.warn('Could not set user context:', error);
+        // Don't throw here as this might not be critical for all operations
       }
-
-      return this.dbRowToAttendanceSession(data);
     } catch (error) {
-      console.error('Error creating attendance session:', error);
-      throw new Error('Failed to create attendance session');
+      console.warn('Error setting user context:', error);
+      // Continue execution as this might not be critical
     }
   }
 
-  async getSessions(userAddress?: string): Promise<AttendanceSession[]> {
+  async getSessions(): Promise<AttendanceSession[]> {
     try {
-      if (userAddress) {
-        await this.setUserContext(userAddress);
+      // First ensure user context is set if we have a user address
+      if (this.userAddress) {
+        await this.setUserContext(this.userAddress);
       }
 
       const { data, error } = await supabase
         .from('attendance_sessions')
         .select('*')
+        .eq('is_active', true)
         .order('start_time', { ascending: false });
 
       if (error) {
-        throw error;
+        console.error('Error fetching sessions:', error);
+        return [];
       }
 
-      return data.map(row => this.dbRowToAttendanceSession(row));
+      return data || [];
     } catch (error) {
-      console.error('Error fetching attendance sessions:', error);
+      console.error('Error in getSessions:', error);
       return [];
     }
   }
 
-  async recordAttendance(record: Omit<AttendanceRecord, 'id'>, userAddress: string): Promise<AttendanceRecord> {
+  async getSessionById(id: string): Promise<AttendanceSession | null> {
     try {
-      await this.setUserContext(userAddress);
+      const { data, error } = await supabase
+        .from('attendance_sessions')
+        .select('*')
+        .eq('id', id)
+        .maybeSingle();
 
-      const insertData: AttendanceRecordInsert = {
-        session_id: record.sessionId,
-        student_address: record.studentAddress,
-        timestamp: record.timestamp.toISOString(),
-        transaction_id: record.transactionId,
-        verified: record.verified,
-        status: record.status,
-        location_latitude: record.location?.latitude || null,
-        location_longitude: record.location?.longitude || null,
-        location_verified: record.locationVerified,
-        distance_from_class: record.distanceFromClass,
-        check_in_attempts: record.checkInAttempts
-      };
+      if (error) {
+        console.error('Error fetching session:', error);
+        return null;
+      }
+
+      return data;
+    } catch (error) {
+      console.error('Error in getSessionById:', error);
+      return null;
+    }
+  }
+
+  async createSession(session: Omit<AttendanceSession, 'id' | 'created_at' | 'updated_at'>): Promise<AttendanceSession | null> {
+    try {
+      if (this.userAddress) {
+        await this.setUserContext(this.userAddress);
+      }
 
       const { data, error } = await supabase
-        .from('attendance_records')
-        .insert(insertData)
+        .from('attendance_sessions')
+        .insert([session])
         .select()
         .single();
 
       if (error) {
-        throw error;
+        console.error('Error creating session:', error);
+        return null;
       }
 
-      // Update session attendee count
-      await supabase
-        .from('attendance_sessions')
-        .update({ 
-          attendee_count: supabase.sql`attendee_count + 1`
-        })
-        .eq('id', record.sessionId);
-
-      return this.dbRowToAttendanceRecord(data);
+      return data;
     } catch (error) {
-      console.error('Error recording attendance:', error);
-      throw new Error('Failed to record attendance');
+      console.error('Error in createSession:', error);
+      return null;
     }
   }
 
-  async getAttendanceRecords(userAddress?: string): Promise<AttendanceRecord[]> {
+  async updateSession(id: string, updates: Partial<AttendanceSession>): Promise<AttendanceSession | null> {
     try {
-      if (userAddress) {
-        await this.setUserContext(userAddress);
+      if (this.userAddress) {
+        await this.setUserContext(this.userAddress);
+      }
+
+      const { data, error } = await supabase
+        .from('attendance_sessions')
+        .update(updates)
+        .eq('id', id)
+        .select()
+        .single();
+
+      if (error) {
+        console.error('Error updating session:', error);
+        return null;
+      }
+
+      return data;
+    } catch (error) {
+      console.error('Error in updateSession:', error);
+      return null;
+    }
+  }
+
+  async getAttendanceRecords(sessionId: string): Promise<AttendanceRecord[]> {
+    try {
+      if (this.userAddress) {
+        await this.setUserContext(this.userAddress);
       }
 
       const { data, error } = await supabase
         .from('attendance_records')
         .select('*')
+        .eq('session_id', sessionId)
         .order('timestamp', { ascending: false });
 
       if (error) {
-        throw error;
+        console.error('Error fetching attendance records:', error);
+        return [];
       }
 
-      return data.map(row => this.dbRowToAttendanceRecord(row));
+      return data || [];
     } catch (error) {
-      console.error('Error fetching attendance records:', error);
+      console.error('Error in getAttendanceRecords:', error);
       return [];
     }
   }
 
-  async submitExcuse(excuse: Omit<ExcuseSubmission, 'id'>, userAddress: string): Promise<ExcuseSubmission> {
+  async createAttendanceRecord(record: Omit<AttendanceRecord, 'id' | 'created_at' | 'updated_at'>): Promise<AttendanceRecord | null> {
     try {
-      await this.setUserContext(userAddress);
-
-      const insertData: ExcuseSubmissionInsert = {
-        session_id: excuse.sessionId,
-        student_address: excuse.studentAddress,
-        reason: excuse.reason,
-        submission_time: excuse.submissionTime.toISOString(),
-        transaction_id: excuse.transactionId,
-        is_within_deadline: excuse.isWithinDeadline
-      };
+      if (this.userAddress) {
+        await this.setUserContext(this.userAddress);
+      }
 
       const { data, error } = await supabase
-        .from('excuse_submissions')
-        .insert(insertData)
+        .from('attendance_records')
+        .insert([record])
         .select()
         .single();
 
       if (error) {
-        throw error;
+        console.error('Error creating attendance record:', error);
+        return null;
       }
 
-      return this.dbRowToExcuseSubmission(data);
+      return data;
     } catch (error) {
-      console.error('Error submitting excuse:', error);
-      throw new Error('Failed to submit excuse');
+      console.error('Error in createAttendanceRecord:', error);
+      return null;
     }
   }
 
-  async reviewExcuse(excuseId: string, status: 'approved' | 'rejected', reviewNotes: string | undefined, reviewerAddress: string): Promise<ExcuseSubmission> {
+  async getExcuseSubmissions(sessionId?: string): Promise<ExcuseSubmission[]> {
     try {
-      await this.setUserContext(reviewerAddress);
-
-      const { data, error } = await supabase
-        .from('excuse_submissions')
-        .update({
-          approval_status: status,
-          reviewed_by: reviewerAddress,
-          review_time: new Date().toISOString(),
-          review_notes: reviewNotes || null
-        })
-        .eq('id', excuseId)
-        .select()
-        .single();
-
-      if (error) {
-        throw error;
+      if (this.userAddress) {
+        await this.setUserContext(this.userAddress);
       }
 
-      // If approved, create or update attendance record
-      if (status === 'approved') {
-        const excuse = this.dbRowToExcuseSubmission(data);
-        
-        // Check if attendance record already exists
-        const { data: existingRecord } = await supabase
-          .from('attendance_records')
-          .select('*')
-          .eq('session_id', excuse.sessionId)
-          .eq('student_address', excuse.studentAddress)
-          .single();
-
-        if (existingRecord) {
-          // Update existing record
-          await supabase
-            .from('attendance_records')
-            .update({ status: 'excused' })
-            .eq('id', existingRecord.id);
-        } else {
-          // Create new excused record
-          await supabase
-            .from('attendance_records')
-            .insert({
-              session_id: excuse.sessionId,
-              student_address: excuse.studentAddress,
-              timestamp: excuse.submissionTime.toISOString(),
-              transaction_id: 'excused-' + excuse.id,
-              verified: true,
-              status: 'excused',
-              location_verified: false,
-              distance_from_class: 0,
-              check_in_attempts: 0
-            });
-        }
-      }
-
-      return this.dbRowToExcuseSubmission(data);
-    } catch (error) {
-      console.error('Error reviewing excuse:', error);
-      throw new Error('Failed to review excuse');
-    }
-  }
-
-  async getExcuseSubmissions(userAddress?: string): Promise<ExcuseSubmission[]> {
-    try {
-      if (userAddress) {
-        await this.setUserContext(userAddress);
-      }
-
-      const { data, error } = await supabase
+      let query = supabase
         .from('excuse_submissions')
         .select('*')
         .order('submission_time', { ascending: false });
 
-      if (error) {
-        throw error;
+      if (sessionId) {
+        query = query.eq('session_id', sessionId);
       }
 
-      return data.map(row => this.dbRowToExcuseSubmission(row));
+      const { data, error } = await query;
+
+      if (error) {
+        console.error('Error fetching excuse submissions:', error);
+        return [];
+      }
+
+      return data || [];
     } catch (error) {
-      console.error('Error fetching excuse submissions:', error);
+      console.error('Error in getExcuseSubmissions:', error);
       return [];
+    }
+  }
+
+  async createExcuseSubmission(excuse: Omit<ExcuseSubmission, 'id' | 'created_at' | 'updated_at'>): Promise<ExcuseSubmission | null> {
+    try {
+      if (this.userAddress) {
+        await this.setUserContext(this.userAddress);
+      }
+
+      const { data, error } = await supabase
+        .from('excuse_submissions')
+        .insert([excuse])
+        .select()
+        .single();
+
+      if (error) {
+        console.error('Error creating excuse submission:', error);
+        return null;
+      }
+
+      return data;
+    } catch (error) {
+      console.error('Error in createExcuseSubmission:', error);
+      return null;
+    }
+  }
+
+  async updateExcuseSubmission(id: string, updates: Partial<ExcuseSubmission>): Promise<ExcuseSubmission | null> {
+    try {
+      if (this.userAddress) {
+        await this.setUserContext(this.userAddress);
+      }
+
+      const { data, error } = await supabase
+        .from('excuse_submissions')
+        .update(updates)
+        .eq('id', id)
+        .select()
+        .single();
+
+      if (error) {
+        console.error('Error updating excuse submission:', error);
+        return null;
+      }
+
+      return data;
+    } catch (error) {
+      console.error('Error in updateExcuseSubmission:', error);
+      return null;
     }
   }
 }
 
-export const supabaseAttendanceService = new SupabaseAttendanceService();
+export const attendanceService = new SupabaseAttendanceService();

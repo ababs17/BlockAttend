@@ -1,125 +1,106 @@
-import { useState } from 'react';
-import { UserProfile } from '../types';
-import { supabaseUserProfileService } from '../services/supabase/userProfile';
+import { useState, useEffect } from 'react';
+import { userProfileService } from '../services/supabase/userProfile';
+import type { UserProfile } from '../types';
 
-export const useSupabaseUserProfile = () => {
-  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
+export const useSupabaseUserProfile = (address?: string) => {
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const loadProfile = async (walletAddress: string) => {
-    if (!walletAddress) {
-      setUserProfile(null);
+  const loadProfile = async () => {
+    if (!address) {
+      setLoading(false);
       return;
     }
-    
-    setIsLoading(true);
-    setError(null);
 
     try {
-      const profile = await supabaseUserProfileService.getProfileByWalletAddress(walletAddress);
-      setUserProfile(profile);
+      setLoading(true);
+      setError(null);
+      
+      const userProfile = await userProfileService.getUserProfile(address);
+      setProfile(userProfile);
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to load profile';
-      setError(errorMessage);
-      console.error('Error loading profile:', err);
-      setUserProfile(null);
+      console.error('Error loading user profile:', err);
+      setError(err instanceof Error ? err.message : 'Failed to load profile');
+      setProfile(null);
     } finally {
-      setIsLoading(false);
+      setLoading(false);
     }
   };
 
-  const createProfile = async (profile: UserProfile) => {
-    setIsLoading(true);
-    setError(null);
+  useEffect(() => {
+    loadProfile();
+  }, [address]);
 
+  const createProfile = async (profileData: Omit<UserProfile, 'id' | 'created_at' | 'updated_at'>) => {
     try {
-      const createdProfile = await supabaseUserProfileService.createProfile(profile);
-      setUserProfile(createdProfile);
-      return createdProfile;
+      setLoading(true);
+      setError(null);
+      
+      const newProfile = await userProfileService.createUserProfile(profileData);
+      if (newProfile) {
+        setProfile(newProfile);
+        return newProfile;
+      }
+      return null;
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to create profile';
-      setError(errorMessage);
-      throw err;
+      console.error('Error creating profile:', err);
+      setError(err instanceof Error ? err.message : 'Failed to create profile');
+      return null;
     } finally {
-      setIsLoading(false);
+      setLoading(false);
     }
   };
 
   const updateProfile = async (updates: Partial<UserProfile>) => {
-    if (!userProfile) {
-      throw new Error('No profile to update');
-    }
-
-    setIsLoading(true);
-    setError(null);
+    if (!address) return null;
 
     try {
-      const updatedProfile = await supabaseUserProfileService.updateProfile(userProfile.address, updates);
-      setUserProfile(updatedProfile);
-      return updatedProfile;
+      setLoading(true);
+      setError(null);
+      
+      const updatedProfile = await userProfileService.updateUserProfile(address, updates);
+      if (updatedProfile) {
+        setProfile(updatedProfile);
+        return updatedProfile;
+      }
+      return null;
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to update profile';
-      setError(errorMessage);
-      throw err;
+      console.error('Error updating profile:', err);
+      setError(err instanceof Error ? err.message : 'Failed to update profile');
+      return null;
     } finally {
-      setIsLoading(false);
+      setLoading(false);
     }
   };
 
-  const deleteProfile = async () => {
-    if (!userProfile) {
-      throw new Error('No profile to delete');
-    }
-
-    setIsLoading(true);
-    setError(null);
+  const verifyProfile = async () => {
+    if (!address) return false;
 
     try {
-      await supabaseUserProfileService.deleteProfile(userProfile.address);
-      setUserProfile(null);
+      const success = await userProfileService.verifyUserProfile(address);
+      if (success && profile) {
+        setProfile({ ...profile, verified: true });
+      }
+      return success;
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to delete profile';
-      setError(errorMessage);
-      throw err;
-    } finally {
-      setIsLoading(false);
+      console.error('Error verifying profile:', err);
+      setError(err instanceof Error ? err.message : 'Failed to verify profile');
+      return false;
     }
   };
 
-  const clearProfile = () => {
-    setUserProfile(null);
-    setError(null);
-  };
-
-  const hasProfile = (walletAddress: string): boolean => {
-    return userProfile !== null && userProfile.address === walletAddress;
-  };
-
-  const refreshProfile = async () => {
-    if (userProfile) {
-      await loadProfile(userProfile.address);
-    }
-  };
-
-  const resetAll = () => {
-    setUserProfile(null);
-    setIsLoading(false);
-    setError(null);
+  const refresh = () => {
+    loadProfile();
   };
 
   return {
-    userProfile,
-    isLoading,
+    profile,
+    loading,
     error,
-    loadProfile,
     createProfile,
     updateProfile,
-    deleteProfile,
-    clearProfile,
-    hasProfile,
-    refreshProfile,
-    resetAll,
-    clearError: () => setError(null)
+    verifyProfile,
+    refresh
   };
 };
