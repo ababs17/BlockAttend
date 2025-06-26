@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Plus, X, Calendar, Clock, FileText, MapPin, BookOpen, Loader, Shield } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useAttendance } from '../hooks/useAttendance';
+import { useSupabaseAttendance } from '../hooks/useSupabaseAttendance';
 import { locationService } from '../services/location';
 
 interface CreateSessionProps {
@@ -28,7 +28,7 @@ export const CreateSession: React.FC<CreateSessionProps> = ({ onSuccess }) => {
     excuseDeadlineHours: 48
   });
 
-  const { createSession, isLoading, error } = useAttendance();
+  const { createSession, isLoading, error, loadData } = useSupabaseAttendance();
 
   const handleGetLocation = async () => {
     setIsGettingLocation(true);
@@ -81,6 +81,9 @@ export const CreateSession: React.FC<CreateSessionProps> = ({ onSuccess }) => {
         checkInWindow: formData.checkInWindow,
         excuseDeadlineHours: formData.excuseDeadlineHours
       });
+
+      // Reload data to show the new session
+      await loadData();
 
       setFormData({
         courseCode: '',

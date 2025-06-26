@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ExcuseSubmission, AttendanceSession } from '../types';
-import { useAttendance } from '../hooks/useAttendance';
+import { useSupabaseAttendance } from '../hooks/useSupabaseAttendance';
 
 interface TeacherExcuseManagementProps {
   excuses: ExcuseSubmission[];
@@ -31,7 +31,7 @@ export const TeacherExcuseManagement: React.FC<TeacherExcuseManagementProps> = (
   const [reviewingExcuse, setReviewingExcuse] = useState<string | null>(null);
   const [reviewNotes, setReviewNotes] = useState<string>('');
   
-  const { reviewExcuse, isLoading } = useAttendance();
+  const { reviewExcuse, isLoading, loadData } = useSupabaseAttendance();
 
   const formatAddress = (address: string) => {
     return `${address.slice(0, 6)}...${address.slice(-4)}`;
@@ -74,6 +74,8 @@ export const TeacherExcuseManagement: React.FC<TeacherExcuseManagementProps> = (
   const handleReview = async (excuseId: string, status: 'approved' | 'rejected') => {
     try {
       await reviewExcuse(excuseId, status, reviewNotes.trim() || undefined);
+      // Reload data to get updated records
+      await loadData();
       setReviewingExcuse(null);
       setReviewNotes('');
     } catch (error) {

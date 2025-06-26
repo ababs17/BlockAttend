@@ -7,12 +7,12 @@ import { StudentDashboard } from './components/StudentDashboard';
 import { TeacherDashboard } from './components/TeacherDashboard';
 import { UserProfileSetup } from './components/UserProfileSetup';
 import { useWallet } from './hooks/useWallet';
-import { useUserProfile } from './hooks/useUserProfile';
-import { useAttendance } from './hooks/useAttendance';
+import { useSupabaseUserProfile } from './hooks/useSupabaseUserProfile';
+import { useSupabaseAttendance } from './hooks/useSupabaseAttendance';
 
 function App() {
   const { isConnected, account } = useWallet();
-  const { userProfile, hasProfile, createProfile, loadProfile, isLoading: profileLoading, error: profileError, resetAll } = useUserProfile();
+  const { userProfile, hasProfile, createProfile, loadProfile, isLoading: profileLoading, error: profileError, resetAll } = useSupabaseUserProfile();
   const { 
     sessions, 
     records, 
@@ -21,8 +21,9 @@ function App() {
     getSessionRecords, 
     getSessionExcuses, 
     getStudentExcuses,
-    getCourseAttendanceSummary
-  } = useAttendance();
+    getCourseAttendanceSummary,
+    loadData
+  } = useSupabaseAttendance();
 
   // Reset everything when wallet disconnects
   useEffect(() => {
@@ -38,9 +39,18 @@ function App() {
     }
   }, [isConnected, account, loadProfile]);
 
+  // Load attendance data when user profile is loaded
+  useEffect(() => {
+    if (userProfile && isConnected) {
+      loadData();
+    }
+  }, [userProfile, isConnected, loadData]);
+
   const handleAttendanceMarking = async (sessionId: string) => {
     try {
       await recordAttendance(sessionId);
+      // Reload data to get updated records
+      await loadData();
     } catch (error) {
       console.error('Failed to mark attendance:', error);
       alert(error instanceof Error ? error.message : 'Failed to mark attendance');
@@ -50,6 +60,8 @@ function App() {
   const handleProfileComplete = async (profile: any) => {
     try {
       await createProfile(profile);
+      // Load attendance data after profile creation
+      await loadData();
     } catch (error) {
       console.error('Failed to create profile:', error);
       alert(error instanceof Error ? error.message : 'Failed to create profile');
@@ -80,7 +92,7 @@ function App() {
             <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm max-w-md mx-auto">
               <p className="font-medium">Connection Issue</p>
               <p>{profileError}</p>
-              <p className="mt-2 text-xs">The app will continue in demo mode.</p>
+              <p className="mt-2 text-xs">Please check your database connection.</p>
             </div>
           )}
         </div>

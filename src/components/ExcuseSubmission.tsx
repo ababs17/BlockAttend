@@ -3,7 +3,7 @@ import { FileText, X, Clock, AlertCircle, Send } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { format } from 'date-fns';
 import { AttendanceSession } from '../types';
-import { useAttendance } from '../hooks/useAttendance';
+import { useSupabaseAttendance } from '../hooks/useSupabaseAttendance';
 
 interface ExcuseSubmissionProps {
   session: AttendanceSession;
@@ -13,7 +13,7 @@ interface ExcuseSubmissionProps {
 export const ExcuseSubmission: React.FC<ExcuseSubmissionProps> = ({ session, onSuccess }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [reason, setReason] = useState('');
-  const { submitExcuse, isLoading, error } = useAttendance();
+  const { submitExcuse, isLoading, error, loadData } = useSupabaseAttendance();
 
   const excuseDeadline = new Date(session.endTime.getTime() + (session.excuseDeadlineHours * 60 * 60 * 1000));
   const timeRemaining = excuseDeadline.getTime() - Date.now();
@@ -28,6 +28,8 @@ export const ExcuseSubmission: React.FC<ExcuseSubmissionProps> = ({ session, onS
 
     try {
       await submitExcuse(session.id, reason);
+      // Reload data to show the new excuse
+      await loadData();
       setReason('');
       setIsOpen(false);
       onSuccess?.();
