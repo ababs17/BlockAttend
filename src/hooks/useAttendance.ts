@@ -11,17 +11,109 @@ export const useAttendance = () => {
   const [excuses, setExcuses] = useState<ExcuseSubmission[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isTestNet, setIsTestNet] = useState(true);
 
-  // Load demo data on mount
+  // Load data from blockchain on mount
   useEffect(() => {
+    loadBlockchainData();
+  }, []);
+
+  const loadBlockchainData = async () => {
+    try {
+      const account = walletService.getConnectedAccount();
+      if (!account) return;
+
+      setIsLoading(true);
+      
+      // Get transactions from blockchain
+      const transactions = await algorandService.getTransactionsByAddress(account);
+      
+      // Parse transactions to extract sessions, records, and excuses
+      const parsedSessions: AttendanceSession[] = [];
+      const parsedRecords: AttendanceRecord[] = [];
+      const parsedExcuses: ExcuseSubmission[] = [];
+
+      for (const tx of transactions) {
+        if (tx.note) {
+          const noteData = algorandService.parseTransactionNote(tx.note);
+          if (noteData) {
+            switch (noteData.type) {
+              case 'DECLARE_CLASS_SESSION':
+                parsedSessions.push({
+                  id: tx.id,
+                  courseCode: noteData.courseCode,
+                  courseName: noteData.courseName,
+                  description: noteData.description,
+                  startTime: new Date(noteData.startTime),
+                  endTime: new Date(noteData.endTime),
+                  isActive: noteData.isActive,
+                  createdBy: noteData.checkerAddress,
+                  attendeeCount: 0, // Will be calculated
+                  location: noteData.location,
+                  declarationTime: new Date(noteData.declarationTime),
+                  allowedRadius: noteData.allowedRadius || 50,
+                  checkInWindow: noteData.checkInWindow || 10,
+                  verifiedChecker: true,
+                  excuseDeadlineHours: noteData.excuseDeadlineHours || 48
+                });
+                break;
+              
+              case 'RECORD_ATTENDANCE':
+                parsedRecords.push({
+                  id: tx.id,
+                  sessionId: noteData.sessionId,
+                  studentAddress: noteData.studentAddress,
+                  timestamp: new Date(noteData.timestamp),
+                  transactionId: tx.id,
+                  verified: true,
+                  status: 'present', // Will be determined by timing
+                  location: noteData.studentLocation,
+                  locationVerified: true,
+                  distanceFromClass: 0, // Will be calculated
+                  checkInAttempts: 1
+                });
+                break;
+              
+              case 'SUBMIT_EXCUSE':
+                parsedExcuses.push({
+                  id: tx.id,
+                  sessionId: noteData.sessionId,
+                  studentAddress: noteData.studentAddress,
+                  reason: noteData.reason,
+                  submissionTime: new Date(noteData.timestamp),
+                  approvalStatus: 'pending',
+                  transactionId: tx.id,
+                  isWithinDeadline: true // Will be calculated
+                });
+                break;
+            }
+          }
+        }
+      }
+
+      setSessions(parsedSessions);
+      setRecords(parsedRecords);
+      setExcuses(parsedExcuses);
+
+    } catch (error) {
+      console.error('Error loading blockchain data:', error);
+      // Fall back to demo data if blockchain loading fails
+      loadDemoData();
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const loadDemoData = () => {
+    // Keep existing demo data as fallback
     const demoSessions: AttendanceSession[] = [
       {
         id: 'demo-1',
         courseCode: 'CS101',
         courseName: 'Computer Science 101',
         description: 'Introduction to Programming',
-        startTime: new Date(Date.now() - 30 * 60 * 1000), // 30 minutes ago
-        endTime: new Date(Date.now() + 90 * 60 * 1000), // 90 minutes from now
+        startTime: new Date(Date.now() - 30 * 60 * 1000),
+        endTime: new Date(Date.now() + 90 * 60 * 1000),
         isActive: true,
         createdBy: 'demo-teacher',
         attendeeCount: 3,
@@ -30,170 +122,18 @@ export const useAttendance = () => {
           longitude: -74.0060,
           address: 'Computer Science Building, Room 101, New York, NY'
         },
-        declarationTime: new Date(Date.now() - 45 * 60 * 1000), // 45 minutes ago
-        allowedRadius: 50, // 50 meters
-        checkInWindow: 10, // 10 minutes
-        verifiedChecker: true,
-        excuseDeadlineHours: 48 // 48 hours to submit excuse
-      },
-      {
-        id: 'demo-2',
-        courseCode: 'MATH201',
-        courseName: 'Advanced Mathematics',
-        description: 'Advanced Calculus and Linear Algebra',
-        startTime: new Date(Date.now() + 60 * 60 * 1000), // 1 hour from now
-        endTime: new Date(Date.now() + 150 * 60 * 1000), // 2.5 hours from now
-        isActive: true,
-        createdBy: 'demo-teacher',
-        attendeeCount: 0,
-        location: {
-          latitude: 40.7589,
-          longitude: -73.9851,
-          address: 'Mathematics Hall, Room 205, New York, NY'
-        },
-        declarationTime: new Date(Date.now() - 15 * 60 * 1000), // 15 minutes ago
-        allowedRadius: 30, // 30 meters
-        checkInWindow: 15, // 15 minutes
-        verifiedChecker: true,
-        excuseDeadlineHours: 48 // 48 hours to submit excuse
-      },
-      {
-        id: 'demo-3',
-        courseCode: 'PHYS301',
-        courseName: 'Advanced Physics',
-        description: 'Quantum Mechanics and Relativity',
-        startTime: new Date(Date.now() - 180 * 60 * 1000), // 3 hours ago
-        endTime: new Date(Date.now() - 90 * 60 * 1000), // 1.5 hours ago (ended)
-        isActive: false,
-        createdBy: 'demo-teacher',
-        attendeeCount: 2,
-        location: {
-          latitude: 40.7505,
-          longitude: -73.9934,
-          address: 'Physics Laboratory, Room 301, New York, NY'
-        },
-        declarationTime: new Date(Date.now() - 200 * 60 * 1000), // 3.3 hours ago
-        allowedRadius: 40,
-        checkInWindow: 10,
-        verifiedChecker: true,
-        excuseDeadlineHours: 48
-      },
-      // Additional demo sessions for better exam eligibility demonstration
-      {
-        id: 'demo-4',
-        courseCode: 'CS101',
-        courseName: 'Computer Science 101',
-        description: 'Data Structures and Algorithms',
-        startTime: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000), // 7 days ago
-        endTime: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000 + 90 * 60 * 1000),
-        isActive: false,
-        createdBy: 'demo-teacher',
-        attendeeCount: 4,
-        location: {
-          latitude: 40.7128,
-          longitude: -74.0060,
-          address: 'Computer Science Building, Room 102, New York, NY'
-        },
-        declarationTime: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000 - 15 * 60 * 1000),
+        declarationTime: new Date(Date.now() - 45 * 60 * 1000),
         allowedRadius: 50,
         checkInWindow: 10,
-        verifiedChecker: true,
-        excuseDeadlineHours: 48
-      },
-      {
-        id: 'demo-5',
-        courseCode: 'MATH201',
-        courseName: 'Advanced Mathematics',
-        description: 'Differential Equations',
-        startTime: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000), // 5 days ago
-        endTime: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000 + 90 * 60 * 1000),
-        isActive: false,
-        createdBy: 'demo-teacher',
-        attendeeCount: 3,
-        location: {
-          latitude: 40.7589,
-          longitude: -73.9851,
-          address: 'Mathematics Hall, Room 206, New York, NY'
-        },
-        declarationTime: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000 - 15 * 60 * 1000),
-        allowedRadius: 30,
-        checkInWindow: 15,
         verifiedChecker: true,
         excuseDeadlineHours: 48
       }
     ];
 
     setSessions(demoSessions);
-
-    // Demo attendance records
-    const demoRecords: AttendanceRecord[] = [
-      {
-        id: 'record-1',
-        sessionId: 'demo-3',
-        studentAddress: 'DEMO_STUDENT_ADDRESS_1234567890ABCDEF1234567890ABCDEF12345678',
-        timestamp: new Date(Date.now() - 180 * 60 * 1000),
-        transactionId: 'attendance-tx-1',
-        verified: true,
-        status: 'present',
-        location: {
-          latitude: 40.7505,
-          longitude: -73.9934
-        },
-        locationVerified: true,
-        distanceFromClass: 15,
-        checkInAttempts: 1
-      },
-      {
-        id: 'record-2',
-        sessionId: 'demo-4',
-        studentAddress: 'DEMO_STUDENT_ADDRESS_1234567890ABCDEF1234567890ABCDEF12345678',
-        timestamp: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
-        transactionId: 'attendance-tx-2',
-        verified: true,
-        status: 'present',
-        location: {
-          latitude: 40.7128,
-          longitude: -74.0060
-        },
-        locationVerified: true,
-        distanceFromClass: 12,
-        checkInAttempts: 1
-      },
-      {
-        id: 'record-3',
-        sessionId: 'demo-5',
-        studentAddress: 'DEMO_STUDENT_ADDRESS_1234567890ABCDEF1234567890ABCDEF12345678',
-        timestamp: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000),
-        transactionId: 'attendance-tx-3',
-        verified: true,
-        status: 'excused',
-        locationVerified: false,
-        distanceFromClass: 0,
-        checkInAttempts: 0
-      }
-    ];
-
-    setRecords(demoRecords);
-
-    // Demo excuse submissions
-    const demoExcuses: ExcuseSubmission[] = [
-      {
-        id: 'excuse-1',
-        sessionId: 'demo-5',
-        studentAddress: 'DEMO_STUDENT_ADDRESS_1234567890ABCDEF1234567890ABCDEF12345678',
-        reason: 'Medical appointment - had to visit the doctor for a scheduled check-up',
-        submissionTime: new Date(Date.now() - 4 * 24 * 60 * 60 * 1000),
-        approvalStatus: 'approved',
-        reviewedBy: 'demo-teacher',
-        reviewTime: new Date(Date.now() - 4 * 24 * 60 * 60 * 1000 + 2 * 60 * 60 * 1000),
-        reviewNotes: 'Valid medical excuse with documentation provided.',
-        transactionId: 'excuse-tx-1',
-        isWithinDeadline: true
-      }
-    ];
-
-    setExcuses(demoExcuses);
-  }, []);
+    setRecords([]);
+    setExcuses([]);
+  };
 
   const createSession = useCallback(async (sessionData: Omit<AttendanceSession, 'id' | 'attendeeCount' | 'verifiedChecker'>) => {
     setIsLoading(true);
@@ -205,31 +145,37 @@ export const useAttendance = () => {
         throw new Error('No wallet connected');
       }
 
+      // Check account balance
+      const hasSufficientBalance = await algorandService.checkSufficientBalance(account);
+      if (!hasSufficientBalance) {
+        throw new Error('Insufficient ALGO balance. You need at least 0.002 ALGO to create a session.');
+      }
+
       // Verify checker authorization
       const isVerifiedChecker = verificationService.verifyChecker(account);
       if (!isVerifiedChecker) {
         throw new Error('Only verified checkers can declare class sessions');
       }
 
-      // For demo purposes, create session locally
-      // In production, this would interact with the blockchain
+      // Create transaction
+      const txn = await algorandService.createAttendanceSession(account, sessionData);
+      
+      // Sign and submit transaction
+      const signedTxn = await walletService.signTransaction(txn);
+      const txId = await algorandService.submitTransaction(signedTxn);
+
+      // Create session object
       const newSession: AttendanceSession = {
         ...sessionData,
-        id: algorandService.generateSessionId(),
+        id: txId,
         attendeeCount: 0,
         createdBy: account,
-        verifiedChecker: isVerifiedChecker,
-        allowedRadius: sessionData.allowedRadius || 50, // Default 50m radius
-        checkInWindow: sessionData.checkInWindow || 10, // Default 10 minutes
-        excuseDeadlineHours: sessionData.excuseDeadlineHours || 48 // Default 48 hours
+        verifiedChecker: isVerifiedChecker
       };
 
       setSessions(prev => [...prev, newSession]);
       
-      // Simulate blockchain transaction
-      const mockTxId = 'session-tx-' + Date.now();
-      
-      return { session: newSession, transactionId: mockTxId };
+      return { session: newSession, transactionId: txId };
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to create session';
       setError(errorMessage);
@@ -247,6 +193,12 @@ export const useAttendance = () => {
       const account = walletService.getConnectedAccount();
       if (!account) {
         throw new Error('No wallet connected');
+      }
+
+      // Check account balance
+      const hasSufficientBalance = await algorandService.checkSufficientBalance(account);
+      if (!hasSufficientBalance) {
+        throw new Error('Insufficient ALGO balance. You need at least 0.002 ALGO to record attendance.');
       }
 
       const session = sessions.find(s => s.id === sessionId);
@@ -286,16 +238,23 @@ export const useAttendance = () => {
         session.startTime
       );
 
-      // For demo purposes, create record locally
-      // In production, this would interact with the blockchain
-      const mockTxId = 'attendance-tx-' + Date.now();
+      // Create and submit transaction
+      const txn = await algorandService.recordAttendance(
+        account,
+        sessionId,
+        studentLocation,
+        session.createdBy
+      );
+      
+      const signedTxn = await walletService.signTransaction(txn);
+      const txId = await algorandService.submitTransaction(signedTxn);
       
       const newRecord: AttendanceRecord = {
-        id: 'record-' + Date.now(),
+        id: txId,
         sessionId,
         studentAddress: account,
         timestamp: new Date(),
-        transactionId: mockTxId,
+        transactionId: txId,
         verified: true,
         status,
         location: {
@@ -316,7 +275,7 @@ export const useAttendance = () => {
           : session
       ));
 
-      return { record: newRecord, transactionId: mockTxId };
+      return { record: newRecord, transactionId: txId };
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to record attendance';
       setError(errorMessage);
@@ -334,6 +293,12 @@ export const useAttendance = () => {
       const account = walletService.getConnectedAccount();
       if (!account) {
         throw new Error('No wallet connected');
+      }
+
+      // Check account balance
+      const hasSufficientBalance = await algorandService.checkSufficientBalance(account);
+      if (!hasSufficientBalance) {
+        throw new Error('Insufficient ALGO balance. You need at least 0.002 ALGO to submit an excuse.');
       }
 
       const session = sessions.find(s => s.id === sessionId);
@@ -368,23 +333,31 @@ export const useAttendance = () => {
         throw new Error(`Excuse submission deadline has passed. You had ${session.excuseDeadlineHours} hours after the session ended.`);
       }
 
-      // Create excuse submission
-      const mockTxId = 'excuse-tx-' + Date.now();
+      // Create and submit transaction
+      const txn = await algorandService.submitExcuse(
+        account,
+        sessionId,
+        reason,
+        session.createdBy
+      );
+      
+      const signedTxn = await walletService.signTransaction(txn);
+      const txId = await algorandService.submitTransaction(signedTxn);
       
       const newExcuse: ExcuseSubmission = {
-        id: 'excuse-' + Date.now(),
+        id: txId,
         sessionId,
         studentAddress: account,
         reason: reason.trim(),
         submissionTime: now,
         approvalStatus: 'pending',
-        transactionId: mockTxId,
+        transactionId: txId,
         isWithinDeadline
       };
 
       setExcuses(prev => [...prev, newExcuse]);
 
-      return { excuse: newExcuse, transactionId: mockTxId };
+      return { excuse: newExcuse, transactionId: txId };
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to submit excuse';
       setError(errorMessage);
@@ -404,6 +377,12 @@ export const useAttendance = () => {
         throw new Error('No wallet connected');
       }
 
+      // Check account balance
+      const hasSufficientBalance = await algorandService.checkSufficientBalance(account);
+      if (!hasSufficientBalance) {
+        throw new Error('Insufficient ALGO balance. You need at least 0.002 ALGO to review an excuse.');
+      }
+
       const excuse = excuses.find(e => e.id === excuseId);
       if (!excuse) {
         throw new Error('Excuse not found');
@@ -418,6 +397,17 @@ export const useAttendance = () => {
       if (session.createdBy !== account) {
         throw new Error('Only the class checker can review excuses');
       }
+
+      // Create and submit transaction
+      const txn = await algorandService.reviewExcuse(
+        account,
+        excuseId,
+        status,
+        reviewNotes
+      );
+      
+      const signedTxn = await walletService.signTransaction(txn);
+      const txId = await algorandService.submitTransaction(signedTxn);
 
       // Update excuse
       const updatedExcuse: ExcuseSubmission = {
@@ -437,20 +427,18 @@ export const useAttendance = () => {
         );
 
         if (existingRecord) {
-          // Update existing record
           setRecords(prev => prev.map(record => 
             record.id === existingRecord.id 
               ? { ...record, status: 'excused' as const }
               : record
           ));
         } else {
-          // Create new excused record
           const excusedRecord: AttendanceRecord = {
             id: 'excused-record-' + Date.now(),
             sessionId: excuse.sessionId,
             studentAddress: excuse.studentAddress,
             timestamp: excuse.submissionTime,
-            transactionId: 'excused-tx-' + Date.now(),
+            transactionId: txId,
             verified: true,
             status: 'excused',
             locationVerified: false,
@@ -485,7 +473,7 @@ export const useAttendance = () => {
     ).length;
 
     const attendancePercentage = totalSessions > 0 ? (attendedSessions / totalSessions) * 100 : 0;
-    const requiredPercentage = 75; // 75% attendance requirement
+    const requiredPercentage = 75;
 
     const isEligible = attendancePercentage >= requiredPercentage;
     const sessionsNeeded = Math.max(0, Math.ceil((requiredPercentage / 100) * totalSessions) - attendedSessions);
@@ -518,7 +506,7 @@ export const useAttendance = () => {
     
     return uniqueCourses.map(courseCode => {
       const courseSessions = sessions.filter(s => s.courseCode === courseCode);
-      const courseSession = courseSessions[0]; // Get course name from first session
+      const courseSession = courseSessions[0];
       
       const studentRecords = records.filter(r => 
         r.studentAddress === studentAddress && 
@@ -595,6 +583,7 @@ export const useAttendance = () => {
     excuses,
     isLoading,
     error,
+    isTestNet,
     createSession,
     recordAttendance,
     submitExcuse,
@@ -606,6 +595,7 @@ export const useAttendance = () => {
     canSubmitExcuse,
     calculateExamEligibility,
     getCourseAttendanceSummary,
+    loadBlockchainData,
     clearError: () => setError(null)
   };
 };
