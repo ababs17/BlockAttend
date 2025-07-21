@@ -1,4 +1,11 @@
 import 'timers';
+
+// Fix timer polyfill conflicts with native browser functions
+if (typeof window !== 'undefined') {
+  (globalThis as any).setTimeout = window.setTimeout;
+  (globalThis as any).setInterval = window.setInterval;
+}
+
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Buffer } from 'buffer';
