@@ -19,6 +19,8 @@ export const TestNetStatus: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
 
   const checkConnection = async () => {
+    if (isLoading) return; // Prevent multiple simultaneous calls
+    
     setIsLoading(true);
     setError(null);
     
@@ -28,32 +30,56 @@ export const TestNetStatus: React.FC = () => {
       
       const account = walletService.getConnectedAccount();
       if (account && connected) {
-        const info = await algorandService.getAccountInfo(account);
-        setAccountInfo(info);
+        try {
+          const info = await algorandService.getAccountInfo(account);
+          setAccountInfo(info);
+        } catch (accountError) {
+          console.warn('Failed to get account info:', accountError);
+          setAccountInfo(null);
+        }
       }
     } catch (err) {
+      console.error('Connection check failed:', err);
       setError(err instanceof Error ? err.message : 'Connection failed');
       setIsConnected(false);
+      setAccountInfo(null);
     } finally {
       setIsLoading(false);
     }
   };
 
   useEffect(() => {
-    checkConnection();
+    // Add a small delay to prevent immediate execution issues
+    const timer = setTimeout(() => {
+      checkConnection();
+    }, 100);
+    
+    return () => clearTimeout(timer);
   }, []);
 
   const formatAlgoAmount = (microAlgos: number) => {
+    if (typeof microAlgos !== 'number' || isNaN(microAlgos)) {
+      return '0.000000';
+    }
     return (microAlgos / 1000000).toFixed(6);
   };
 
   const openFaucet = () => {
-    window.open('https://testnet.algoexplorer.io/dispenser', '_blank');
+    try {
+      window.open('https://testnet.algoexplorer.io/dispenser', '_blank');
+    } catch (err) {
+      console.error('Failed to open faucet:', err);
+    }
   };
 
   const openExplorer = () => {
-    if (accountInfo) {
-      window.open(`https://testnet.algoexplorer.io/address/${walletService.getConnectedAccount()}`, '_blank');
+    try {
+      const account = walletService.getConnectedAccount();
+      if (accountInfo && account) {
+        window.open(`https://testnet.algoexplorer.io/address/${account}`, '_blank');
+      }
+    } catch (err) {
+      console.error('Failed to open explorer:', err);
     }
   };
 
@@ -100,7 +126,7 @@ export const TestNetStatus: React.FC = () => {
             <span className="text-xs text-gray-600">Balance:</span>
             <div className="flex items-center gap-2">
               <span className="text-sm font-medium text-black">
-                {formatAlgoAmount(accountInfo.amount)} ALGO
+                {formatAlgoAmount(accountInfo.amount || 0)} ALGO
               </span>
               <span className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded-full ml-2">
                 TestNet Only
@@ -112,11 +138,11 @@ export const TestNetStatus: React.FC = () => {
           <div className="flex items-center justify-between">
             <span className="text-xs text-gray-600">Min Balance:</span>
             <span className="text-sm text-gray-600">
-              {formatAlgoAmount(accountInfo['min-balance'])} ALGO
+              {formatAlgoAmount(accountInfo['min-balance'] || 0)} ALGO
             </span>
           </div>
 
-          {accountInfo.amount < 1000000 && (
+          {(accountInfo.amount || 0) < 1000000 && (
             <div className="bg-orange-50 border border-orange-200 rounded-lg p-3">
               <div className="flex items-center gap-2 mb-2">
                 <AlertTriangle size={14} className="text-orange-600" />
