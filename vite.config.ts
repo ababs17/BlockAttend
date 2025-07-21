@@ -9,7 +9,8 @@ export default defineConfig({
   },
   define: {
     global: 'globalThis',
-    'process.env': {}
+    'process.env': {},
+    'process.browser': true
   },
   resolve: {
     alias: {
@@ -17,8 +18,7 @@ export default defineConfig({
       crypto: 'crypto-browserify',
       stream: 'stream-browserify',
       util: 'util',
-      process: 'process/browser.js',
-      timers: 'timers-browserify'
+      process: 'process/browser'
     }
   },
   optimizeDeps: {
@@ -29,8 +29,7 @@ export default defineConfig({
       'crypto-browserify',
       'stream-browserify',
       'util',
-      'process',
-      'timers-browserify'
+      'process'
     ]
   }
 })

@@ -91,6 +91,7 @@ export const UserProfileSetup: React.FC<UserProfileSetupProps> = ({
 
     try {
       const profile: UserProfile = {
+        id: '',
         address: walletAddress,
         role: selectedRole,
         name: formData.name.trim(),
