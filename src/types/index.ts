@@ -118,7 +118,7 @@ export interface AlgorandConfig {
   server: string;
   port: number;
   token: string;
-  network: 'MainNet' | 'TestNet' | 'BetaNet';
+  network: 'TestNet';
 }
 
 export interface VeracityCheck {

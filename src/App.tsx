@@ -112,7 +112,7 @@ function App() {
               <div>
                 <h1 className="text-lg font-semibold text-black">BlockAttend</h1>
                 <p className="text-xs text-gray-500">
-                  {isTestNet ? 'TestNet' : 'MainNet'} • Blockchain Attendance System
+                  TestNet Only • Blockchain Attendance System
                 </p>
               </div>
             </div>

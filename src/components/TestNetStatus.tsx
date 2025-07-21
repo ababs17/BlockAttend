@@ -102,6 +102,9 @@ export const TestNetStatus: React.FC = () => {
               <span className="text-sm font-medium text-black">
                 {formatAlgoAmount(accountInfo.amount)} ALGO
               </span>
+              <span className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded-full ml-2">
+                TestNet Only
+              </span>
               <Coins size={12} className="text-gray-600" />
             </div>
           </div>

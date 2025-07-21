@@ -11,7 +11,7 @@ export const useAttendance = () => {
   const [excuses, setExcuses] = useState<ExcuseSubmission[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [isTestNet, setIsTestNet] = useState(true);
+  const [isTestNet] = useState(true); // Always TestNet - never MainNet
 
   // Load data from blockchain on mount
   useEffect(() => {

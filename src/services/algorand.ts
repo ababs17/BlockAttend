@@ -7,7 +7,7 @@ class AlgorandService {
   private config: AlgorandConfig;
 
   constructor() {
-    // Using Algorand TestNet for development
+    // IMPORTANT: This application ONLY uses Algorand TestNet - NEVER MainNet
     this.config = {
       server: 'https://testnet-api.algonode.cloud',
       port: 443,
@@ -21,7 +21,7 @@ class AlgorandService {
       this.config.port
     );
 
-    // Initialize indexer for querying blockchain data
+    // Initialize indexer for querying TestNet blockchain data only
     this.indexerClient = new algosdk.Indexer(
       '',
       'https://testnet-idx.algonode.cloud',
